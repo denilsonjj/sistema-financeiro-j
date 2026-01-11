@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import PageHeader from "../components/PageHeader";
 import Select from "../components/Select";
 import StatCard from "../components/StatCard";
@@ -8,28 +8,30 @@ import BarChart from "../components/charts/BarChart";
 import LineChart from "../components/charts/LineChart";
 import Donut from "../components/charts/Donut";
 import { reportOptions } from "../data/options";
+import { getLabel } from "../data/uiLabels";
 import { supabase } from "../lib/supabaseClient";
 import { formatCurrency } from "../utils/format";
 import { getLastMonths, getMonthKey, parseDate } from "../utils/date";
 
-function Relatorios({ orgId, dataVersion }) {
+function Relatorios({ orgId, dataVersion, labels }) {
   const [period, setPeriod] = useState(reportOptions[0]);
   const [contracts, setContracts] = useState([]);
   const [installments, setInstallments] = useState([]);
   const [receipts, setReceipts] = useState([]);
   const [expenses, setExpenses] = useState([]);
+  const [subareas, setSubareas] = useState([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     const loadData = async () => {
       if (!orgId) return;
       setLoading(true);
-      const [contractsRes, installmentsRes, receiptsRes, expensesRes] =
+      const [contractsRes, installmentsRes, receiptsRes, expensesRes, subareasRes] =
         await Promise.all([
           supabase
             .from("contracts")
             .select(
-              "id, total_value, honorarium_types(name), law_areas(name), client_origins(name)"
+              "id, total_value, subarea_id, honorarium_types(name), law_areas(name), client_origins(name)"
             )
             .eq("org_id", orgId),
           supabase
@@ -44,12 +46,14 @@ function Relatorios({ orgId, dataVersion }) {
             .from("expenses")
             .select("id, amount, due_date")
             .eq("org_id", orgId),
+          supabase.from("law_subareas").select("id, name").eq("org_id", orgId),
         ]);
 
       setContracts(contractsRes.data ?? []);
       setInstallments(installmentsRes.data ?? []);
       setReceipts(receiptsRes.data ?? []);
       setExpenses(expensesRes.data ?? []);
+      setSubareas(subareasRes.data ?? []);
       setLoading(false);
     };
     loadData();
@@ -100,16 +104,23 @@ function Relatorios({ orgId, dataVersion }) {
     const honorariumTotals = {};
     const areaTotals = {};
     const originTotals = {};
+    const subareaTotals = {};
+
+    const subareaMap = new Map(subareas.map((sub) => [sub.id, sub.name]));
 
     contracts.forEach((contract) => {
       const value = Number(contract.total_value || 0);
       const honorarium = contract.honorarium_types?.name ?? "Outro";
       const area = contract.law_areas?.name ?? "Outro";
       const origin = contract.client_origins?.name ?? "Outro";
+      const subarea = contract.subarea_id
+        ? subareaMap.get(contract.subarea_id) ?? "Outros"
+        : "Outros";
 
       honorariumTotals[honorarium] = (honorariumTotals[honorarium] || 0) + value;
       areaTotals[area] = (areaTotals[area] || 0) + value;
       originTotals[origin] = (originTotals[origin] || 0) + value;
+      subareaTotals[subarea] = (subareaTotals[subarea] || 0) + value;
     });
 
     const buildSegments = (source, palette) => {
@@ -134,8 +145,9 @@ function Relatorios({ orgId, dataVersion }) {
       honorariumSegments: buildSegments(honorariumTotals, ["#1c3fa8", "#4e78dd", "#9fbaf7"]),
       areaSegments: buildSegments(areaTotals, ["#1c3fa8", "#2d58c8", "#4e78dd", "#7aa0f1"]),
       originSegments: buildSegments(originTotals, ["#1c3fa8", "#2d58c8", "#4e78dd", "#7aa0f1"]),
+      subareaSegments: buildSegments(subareaTotals, ["#0f2e7a", "#1c3fa8", "#2f66e0", "#6e95ef"]),
     };
-  }, [period, contracts, installments, receipts, expenses]);
+  }, [period, contracts, installments, receipts, expenses, subareas]);
 
   return (
     <section className="page">
@@ -144,38 +156,45 @@ function Relatorios({ orgId, dataVersion }) {
         subtitle={loading ? "Carregando dados..." : "Análise financeira detalhada"}
       >
         <div className="actions-row">
-          <Select value={period} options={reportOptions} onChange={(event) => setPeriod(event.target.value)} />
+          <Select
+            value={period}
+            options={reportOptions}
+            onChange={(event) => setPeriod(event.target.value)}
+          />
         </div>
       </PageHeader>
 
       <div className="stats-grid">
         <StatCard
-          title="Total Recebido"
+          title={getLabel(labels, "reports.card.totalReceived.title", "Total Recebido")}
           value={formatCurrency(reportData.totalReceived)}
           caption="Acumulado"
           icon="money"
         />
         <StatCard
-          title="Total Despesas"
+          title={getLabel(labels, "reports.card.totalExpenses.title", "Total Despesas")}
           value={formatCurrency(reportData.totalExpenses)}
           caption="Acumulado"
           icon="trend"
         />
         <StatCard
-          title="Resultado Líquido"
+          title={getLabel(labels, "reports.card.result.title", "Resultado Líquido")}
           value={formatCurrency(reportData.resultTotal)}
           caption={reportData.resultTotal >= 0 ? "Positivo" : "Negativo"}
           icon="target"
         />
         <StatCard
-          title="Recebíveis Futuros"
+          title={getLabel(labels, "reports.card.receivables.title", "Recebíveis Futuros")}
           value={formatCurrency(reportData.receivables)}
           caption="Projetado"
           icon="users"
         />
       </div>
 
-      <Card title="Comparativo Mensal" icon="chart">
+      <Card
+        title={getLabel(labels, "reports.chart.compare.title", "Comparativo Mensal")}
+        icon="chart"
+      >
         <BarChart data={reportData.chartData} />
         <div className="legend">
           <LegendItem color="var(--primary)" label="Receita" />
@@ -183,18 +202,28 @@ function Relatorios({ orgId, dataVersion }) {
         </div>
       </Card>
 
-      <Card title="Resultado Líquido Mensal" icon="line">
+      <Card
+        title={getLabel(labels, "reports.chart.result.title", "Resultado Líquido Mensal")}
+        icon="line"
+      >
         <LineChart data={reportData.resultSeries} lineColor="#1aa972" />
       </Card>
 
       <div className="grid-3">
-        <Card title="Por Tipo de Honorário">
+        <Card
+          title={getLabel(labels, "reports.chart.honorarium.title", "Por Tipo de Honorário")}
+        >
           <Donut segments={reportData.honorariumSegments} />
         </Card>
-        <Card title="Por Área do Direito">
+        <Card title={getLabel(labels, "reports.chart.area.title", "Por Área do Direito")}>
           <Donut segments={reportData.areaSegments} />
         </Card>
-        <Card title="Por Origem do Cliente">
+        <Card
+          title={getLabel(labels, "reports.chart.subarea.title", "Por Subárea do Direito")}
+        >
+          <Donut segments={reportData.subareaSegments} />
+        </Card>
+        <Card title={getLabel(labels, "reports.chart.origin.title", "Por Origem do Cliente")}>
           <Donut segments={reportData.originSegments} />
         </Card>
       </div>

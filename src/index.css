@@ -858,6 +858,14 @@ tbody td {
   font-size: 0.85rem;
 }
 
+.form-success {
+  background: rgba(26, 169, 114, 0.12);
+  color: var(--success);
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 0.85rem;
+}
+
 .span-2 {
   grid-column: span 2;
 }

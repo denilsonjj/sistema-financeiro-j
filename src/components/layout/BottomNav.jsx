@@ -1,9 +1,10 @@
 import Icon from "../Icon";
 
 function BottomNav({ items, active, onNavigate }) {
+  const visibleItems = items.filter((item) => !item.mobileHidden);
   return (
     <nav className="bottom-nav">
-      {items.map((item) => (
+      {visibleItems.map((item) => (
         <button
           type="button"
           key={item.id}

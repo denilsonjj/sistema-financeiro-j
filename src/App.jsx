@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "./lib/supabaseClient";
 import Sidebar from "./components/layout/Sidebar";
 import BottomNav from "./components/layout/BottomNav";
@@ -9,6 +9,7 @@ import FluxoDeCaixa from "./pages/FluxoDeCaixa";
 import Despesas from "./pages/Despesas";
 import Relatorios from "./pages/Relatorios";
 import AreasDoDireito from "./pages/AreasDoDireito";
+import Personalizacao from "./pages/Personalizacao";
 import ContratoModal from "./modals/ContratoModal";
 import EntradaModal from "./modals/EntradaModal";
 import DespesaModal from "./modals/DespesaModal";
@@ -23,6 +24,8 @@ function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [orgId, setOrgId] = useState(null);
   const [orgLoading, setOrgLoading] = useState(false);
+  const [labels, setLabels] = useState({});
+  const [labelsLoading, setLabelsLoading] = useState(false);
   const [dataVersion, setDataVersion] = useState(0);
   const [areaToEdit, setAreaToEdit] = useState(null);
   const [contractToEdit, setContractToEdit] = useState(null);
@@ -71,6 +74,33 @@ function App() {
     loadOrg();
   }, [session]);
 
+  useEffect(() => {
+    let mounted = true;
+    const loadLabels = async () => {
+      if (!orgId) {
+        setLabels({});
+        setLabelsLoading(false);
+        return;
+      }
+      setLabelsLoading(true);
+      const { data } = await supabase
+        .from("ui_labels")
+        .select("key, value")
+        .eq("org_id", orgId);
+      if (!mounted) return;
+      const nextLabels = {};
+      (data ?? []).forEach((item) => {
+        nextLabels[item.key] = item.value;
+      });
+      setLabels(nextLabels);
+      setLabelsLoading(false);
+    };
+    loadLabels();
+    return () => {
+      mounted = false;
+    };
+  }, [orgId]);
+
   const handleSignOut = async () => {
     await supabase.auth.signOut();
   };
@@ -96,7 +126,7 @@ function App() {
     return <AuthScreen />;
   }
 
-  if (orgLoading) {
+  if (orgLoading || labelsLoading) {
     return (
       <div className="app-loading">
         <div className="loading-card">Carregando organização...</div>
@@ -142,7 +172,7 @@ function App() {
         </div>
 
         {active === "dashboard" && (
-          <Dashboard orgId={orgId} dataVersion={dataVersion} />
+          <Dashboard orgId={orgId} dataVersion={dataVersion} labels={labels} />
         )}
         {active === "contratos" && (
           <Contratos
@@ -178,7 +208,7 @@ function App() {
           />
         )}
         {active === "relatorios" && (
-          <Relatorios orgId={orgId} dataVersion={dataVersion} />
+          <Relatorios orgId={orgId} dataVersion={dataVersion} labels={labels} />
         )}
         {active === "areas" && (
           <AreasDoDireito
@@ -189,6 +219,13 @@ function App() {
             }}
             orgId={orgId}
             dataVersion={dataVersion}
+          />
+        )}
+        {active === "personalizacao" && (
+          <Personalizacao
+            orgId={orgId}
+            labels={labels}
+            onSaved={(nextLabels) => setLabels(nextLabels)}
           />
         )}
       </main>

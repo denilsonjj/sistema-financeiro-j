@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import PageHeader from "../components/PageHeader";
 import Icon from "../components/Icon";
 import { supabase } from "../lib/supabaseClient";
@@ -23,7 +23,7 @@ function Contratos({ onOpenModal, onEdit, orgId, dataVersion }) {
       const { data } = await supabase
         .from("contracts")
         .select(
-          "id, client_name, total_value, start_date, status, honorarium_types(name), law_areas(name)"
+          "id, client_name, total_value, start_date, status, honorarium_types(name), law_areas(name), law_subareas(name)"
         )
         .eq("org_id", orgId)
         .order("created_at", { ascending: false });
@@ -103,7 +103,7 @@ function Contratos({ onOpenModal, onEdit, orgId, dataVersion }) {
             <tr>
               <th>Cliente</th>
               <th>Tipo</th>
-              <th>Área</th>
+              <th>Área / Subárea</th>
               <th>Valor</th>
               <th>Início</th>
               <th>Status</th>
@@ -126,11 +126,16 @@ function Contratos({ onOpenModal, onEdit, orgId, dataVersion }) {
                   label: contract.status,
                   tone: "neutral",
                 };
+                const areaLabel = contract.law_areas?.name ?? "-";
+                const subareaLabel = contract.law_subareas?.name;
+                const areaText = subareaLabel
+                  ? `${areaLabel} / ${subareaLabel}`
+                  : areaLabel;
                 return (
                   <tr key={contract.id}>
                     <td>{contract.client_name}</td>
                     <td>{contract.honorarium_types?.name ?? "-"}</td>
-                    <td>{contract.law_areas?.name ?? "-"}</td>
+                    <td>{areaText}</td>
                     <td>{formatCurrency(contract.total_value)}</td>
                     <td>{formatDate(contract.start_date)}</td>
                     <td>

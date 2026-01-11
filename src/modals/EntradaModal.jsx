@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Modal from "../components/Modal";
 import { supabase } from "../lib/supabaseClient";
 import { formatCurrency, parseCurrency } from "../utils/format";
@@ -9,6 +9,7 @@ const initialForm = {
   receivedDate: "",
   categoryId: "",
   areaId: "",
+  subareaId: "",
   responsible: "",
   notes: "",
 };
@@ -21,18 +22,21 @@ function EntradaModal({ onClose, orgId, onCreated, mode = "create", entryId }) {
   const [options, setOptions] = useState({
     categories: [],
     areas: [],
+    subareas: [],
   });
 
   useEffect(() => {
     const loadOptions = async () => {
       if (!orgId) return;
-      const [categoriesRes, areasRes] = await Promise.all([
+      const [categoriesRes, areasRes, subareasRes] = await Promise.all([
         supabase.from("income_categories").select("id, name").eq("org_id", orgId),
         supabase.from("law_areas").select("id, name").eq("org_id", orgId),
+        supabase.from("law_subareas").select("id, name, area_id").eq("org_id", orgId),
       ]);
       setOptions({
         categories: categoriesRes.data ?? [],
         areas: areasRes.data ?? [],
+        subareas: subareasRes.data ?? [],
       });
     };
     loadOptions();
@@ -48,7 +52,7 @@ function EntradaModal({ onClose, orgId, onCreated, mode = "create", entryId }) {
       const { data } = await supabase
         .from("manual_receipts")
         .select(
-          "id, description, amount, received_date, category_id, area_id, responsible, notes"
+          "id, description, amount, received_date, category_id, area_id, subarea_id, responsible, notes"
         )
         .eq("id", entryId)
         .eq("org_id", orgId)
@@ -63,6 +67,7 @@ function EntradaModal({ onClose, orgId, onCreated, mode = "create", entryId }) {
         receivedDate: data.received_date ?? "",
         categoryId: data.category_id ?? "",
         areaId: data.area_id ?? "",
+        subareaId: data.subarea_id ?? "",
         responsible: data.responsible ?? "",
         notes: data.notes ?? "",
       });
@@ -70,8 +75,26 @@ function EntradaModal({ onClose, orgId, onCreated, mode = "create", entryId }) {
     loadEntry();
   }, [isEdit, entryId, orgId]);
 
+  const availableSubareas = useMemo(
+    () => options.subareas.filter((item) => item.area_id === form.areaId),
+    [options.subareas, form.areaId]
+  );
+
+  useEffect(() => {
+    if (!form.subareaId) return;
+    const exists = availableSubareas.some((item) => item.id === form.subareaId);
+    if (!exists) {
+      setForm((prev) => ({ ...prev, subareaId: "" }));
+    }
+  }, [availableSubareas, form.subareaId]);
+
   const handleChange = (field) => (event) => {
-    setForm((prev) => ({ ...prev, [field]: event.target.value }));
+    const value = event.target.value;
+    if (field === "areaId") {
+      setForm((prev) => ({ ...prev, areaId: value, subareaId: "" }));
+      return;
+    }
+    setForm((prev) => ({ ...prev, [field]: value }));
   };
 
   const handleSubmit = async (event) => {
@@ -98,6 +121,7 @@ function EntradaModal({ onClose, orgId, onCreated, mode = "create", entryId }) {
           received_date: form.receivedDate,
           category_id: form.categoryId,
           area_id: form.areaId || null,
+          subarea_id: form.subareaId || null,
           responsible: form.responsible || null,
           notes: form.notes || null,
         })
@@ -117,6 +141,7 @@ function EntradaModal({ onClose, orgId, onCreated, mode = "create", entryId }) {
         received_date: form.receivedDate,
         category_id: form.categoryId,
         area_id: form.areaId || null,
+        subarea_id: form.subareaId || null,
         responsible: form.responsible || null,
         notes: form.notes || null,
       });
@@ -190,11 +215,24 @@ function EntradaModal({ onClose, orgId, onCreated, mode = "create", entryId }) {
             ))}
           </select>
         </label>
-        <label className="field span-2">
+        <label className="field">
           <span>Área do Direito (opcional)</span>
           <select value={form.areaId} onChange={handleChange("areaId")}>
             <option value="">Selecione a área</option>
             {options.areas.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          <span>Subárea (opcional)</span>
+          <select value={form.subareaId} onChange={handleChange("subareaId")} disabled={!form.areaId}>
+            <option value="">
+              {form.areaId ? "Selecione a subárea" : "Selecione a área primeiro"}
+            </option>
+            {availableSubareas.map((item) => (
               <option key={item.id} value={item.id}>
                 {item.name}
               </option>
@@ -219,11 +257,7 @@ function EntradaModal({ onClose, orgId, onCreated, mode = "create", entryId }) {
             onChange={handleChange("notes")}
           />
         </label>
-        {error && (
-          <div className="form-error span-2">
-            {error}
-          </div>
-        )}
+        {error && <div className="form-error span-2">{error}</div>}
       </form>
     </Modal>
   );

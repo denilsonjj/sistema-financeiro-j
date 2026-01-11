@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Modal from "../components/Modal";
 import { supabase } from "../lib/supabaseClient";
 import { formatCurrency, parseCurrency } from "../utils/format";
@@ -8,6 +8,7 @@ const initialForm = {
   clientName: "",
   honorariumTypeId: "",
   areaId: "",
+  subareaId: "",
   originId: "",
   paymentMethodId: "",
   totalValue: "",
@@ -27,6 +28,7 @@ function ContratoModal({ onClose, orgId, onCreated, mode = "create", contractId 
   const [options, setOptions] = useState({
     honorarium: [],
     areas: [],
+    subareas: [],
     origins: [],
     payments: [],
   });
@@ -34,15 +36,21 @@ function ContratoModal({ onClose, orgId, onCreated, mode = "create", contractId 
   useEffect(() => {
     const loadOptions = async () => {
       if (!orgId) return;
-      const [honorariumRes, areasRes, originsRes, paymentsRes] = await Promise.all([
-        supabase.from("honorarium_types").select("id, name").eq("org_id", orgId),
-        supabase.from("law_areas").select("id, name").eq("org_id", orgId),
-        supabase.from("client_origins").select("id, name").eq("org_id", orgId),
-        supabase.from("payment_methods").select("id, name").eq("org_id", orgId),
-      ]);
+      const [honorariumRes, areasRes, subareasRes, originsRes, paymentsRes] =
+        await Promise.all([
+          supabase.from("honorarium_types").select("id, name").eq("org_id", orgId),
+          supabase.from("law_areas").select("id, name").eq("org_id", orgId),
+          supabase
+            .from("law_subareas")
+            .select("id, name, area_id")
+            .eq("org_id", orgId),
+          supabase.from("client_origins").select("id, name").eq("org_id", orgId),
+          supabase.from("payment_methods").select("id, name").eq("org_id", orgId),
+        ]);
       setOptions({
         honorarium: honorariumRes.data ?? [],
         areas: areasRes.data ?? [],
+        subareas: subareasRes.data ?? [],
         origins: originsRes.data ?? [],
         payments: paymentsRes.data ?? [],
       });
@@ -60,7 +68,7 @@ function ContratoModal({ onClose, orgId, onCreated, mode = "create", contractId 
       const { data } = await supabase
         .from("contracts")
         .select(
-          "id, client_name, honorarium_type_id, area_id, origin_id, payment_method_id, total_value, start_date, status, internal_responsible, notes"
+          "id, client_name, honorarium_type_id, area_id, subarea_id, origin_id, payment_method_id, total_value, start_date, status, internal_responsible, notes"
         )
         .eq("id", contractId)
         .eq("org_id", orgId)
@@ -73,6 +81,7 @@ function ContratoModal({ onClose, orgId, onCreated, mode = "create", contractId 
         clientName: data.client_name ?? "",
         honorariumTypeId: data.honorarium_type_id ?? "",
         areaId: data.area_id ?? "",
+        subareaId: data.subarea_id ?? "",
         originId: data.origin_id ?? "",
         paymentMethodId: data.payment_method_id ?? "",
         totalValue: formattedTotal,
@@ -87,6 +96,19 @@ function ContratoModal({ onClose, orgId, onCreated, mode = "create", contractId 
     loadContract();
   }, [isEdit, contractId, orgId]);
 
+  const availableSubareas = useMemo(
+    () => options.subareas.filter((item) => item.area_id === form.areaId),
+    [options.subareas, form.areaId]
+  );
+
+  useEffect(() => {
+    if (!form.subareaId) return;
+    const exists = availableSubareas.some((item) => item.id === form.subareaId);
+    if (!exists) {
+      setForm((prev) => ({ ...prev, subareaId: "" }));
+    }
+  }, [availableSubareas, form.subareaId]);
+
   useEffect(() => {
     if (form.startDate && !form.firstDueDate) {
       setForm((prev) => ({ ...prev, firstDueDate: prev.startDate }));
@@ -94,7 +116,12 @@ function ContratoModal({ onClose, orgId, onCreated, mode = "create", contractId 
   }, [form.startDate, form.firstDueDate]);
 
   const handleChange = (field) => (event) => {
-    setForm((prev) => ({ ...prev, [field]: event.target.value }));
+    const value = event.target.value;
+    if (field === "areaId") {
+      setForm((prev) => ({ ...prev, areaId: value, subareaId: "" }));
+      return;
+    }
+    setForm((prev) => ({ ...prev, [field]: value }));
   };
 
   const handleSubmit = async (event) => {
@@ -129,6 +156,7 @@ function ContratoModal({ onClose, orgId, onCreated, mode = "create", contractId 
           client_name: form.clientName,
           honorarium_type_id: form.honorariumTypeId,
           area_id: form.areaId,
+          subarea_id: form.subareaId || null,
           origin_id: form.originId || null,
           payment_method_id: form.paymentMethodId,
           total_value: totalValue,
@@ -166,6 +194,7 @@ function ContratoModal({ onClose, orgId, onCreated, mode = "create", contractId 
         client_name: form.clientName,
         honorarium_type_id: form.honorariumTypeId,
         area_id: form.areaId,
+        subarea_id: form.subareaId || null,
         origin_id: form.originId || null,
         payment_method_id: form.paymentMethodId,
         total_value: totalValue,
@@ -270,6 +299,19 @@ function ContratoModal({ onClose, orgId, onCreated, mode = "create", contractId 
           </select>
         </label>
         <label className="field">
+          <span>Subárea</span>
+          <select value={form.subareaId} onChange={handleChange("subareaId")} disabled={!form.areaId}>
+            <option value="">
+              {form.areaId ? "Selecione a subárea" : "Selecione a área primeiro"}
+            </option>
+            {availableSubareas.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
           <span>Origem do Cliente</span>
           <select value={form.originId} onChange={handleChange("originId")}>
             <option value="">Selecione</option>
@@ -365,11 +407,7 @@ function ContratoModal({ onClose, orgId, onCreated, mode = "create", contractId 
             onChange={handleChange("notes")}
           />
         </label>
-        {error && (
-          <div className="form-error span-2">
-            {error}
-          </div>
-        )}
+        {error && <div className="form-error span-2">{error}</div>}
       </form>
     </Modal>
   );

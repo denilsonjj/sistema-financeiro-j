@@ -1,7 +1,8 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import Modal from "../components/Modal";
 import { supabase } from "../lib/supabaseClient";
 import { formatCurrency, parseCurrency } from "../utils/format";
+import { addMonths, parseDate, toIsoDate } from "../utils/date";
 
 const initialForm = {
   expenseType: "one_time",
@@ -12,6 +13,7 @@ const initialForm = {
   dueDate: "",
   paid: false,
   notes: "",
+  recurrenceCount: "12",
 };
 
 function DespesaModal({ onClose, orgId, onCreated, mode = "create", expenseId }) {
@@ -61,6 +63,7 @@ function DespesaModal({ onClose, orgId, onCreated, mode = "create", expenseId })
         dueDate: data.due_date ?? "",
         paid: Boolean(data.paid),
         notes: data.notes ?? "",
+        recurrenceCount: "1",
       });
     };
     loadExpense();
@@ -68,7 +71,12 @@ function DespesaModal({ onClose, orgId, onCreated, mode = "create", expenseId })
 
   const handleChange = (field) => (event) => {
     const value = field === "paid" ? event.target.checked : event.target.value;
-    setForm((prev) => ({ ...prev, [field]: value }));
+    setForm((prev) => {
+      if (field === "expenseType" && value === "recurring" && !prev.recurrenceCount) {
+        return { ...prev, expenseType: value, recurrenceCount: "12" };
+      }
+      return { ...prev, [field]: value };
+    });
   };
 
   const handleSubmit = async (event) => {
@@ -77,6 +85,18 @@ function DespesaModal({ onClose, orgId, onCreated, mode = "create", expenseId })
 
     if (!form.description || !form.categoryId || !form.amount || !form.dueDate) {
       setError("Preencha os campos obrigatórios.");
+      return;
+    }
+
+    const amount = parseCurrency(form.amount);
+    if (amount <= 0) {
+      setError("Informe um valor válido.");
+      return;
+    }
+
+    const baseDate = parseDate(form.dueDate);
+    if (!baseDate) {
+      setError("Informe uma data válida.");
       return;
     }
 
@@ -94,7 +114,7 @@ function DespesaModal({ onClose, orgId, onCreated, mode = "create", expenseId })
           category_id: form.categoryId,
           expense_type: form.expenseType,
           cost_type: form.costType || null,
-          amount: parseCurrency(form.amount),
+          amount,
           due_date: form.dueDate,
           paid: form.paid,
           paid_at: form.paid ? form.dueDate : null,
@@ -108,6 +128,38 @@ function DespesaModal({ onClose, orgId, onCreated, mode = "create", expenseId })
         setLoading(false);
         return;
       }
+    } else if (form.expenseType === "recurring") {
+      const recurrenceCount = Math.max(1, Number(form.recurrenceCount || 1));
+      if (!Number.isFinite(recurrenceCount) || recurrenceCount < 1) {
+        setError("Quantidade de meses inválida.");
+        setLoading(false);
+        return;
+      }
+
+      const payload = Array.from({ length: recurrenceCount }, (_, index) => {
+        const dueDate = toIsoDate(addMonths(baseDate, index));
+        const isFirst = index === 0;
+        const paid = isFirst ? form.paid : false;
+        return {
+          org_id: orgId,
+          description: form.description,
+          category_id: form.categoryId,
+          expense_type: form.expenseType,
+          cost_type: form.costType || null,
+          amount,
+          due_date: dueDate,
+          paid,
+          paid_at: paid ? dueDate : null,
+          notes: form.notes || null,
+        };
+      });
+
+      const { error: insertError } = await supabase.from("expenses").insert(payload);
+      if (insertError) {
+        setError("Não foi possível salvar a despesa.");
+        setLoading(false);
+        return;
+      }
     } else {
       const { error: insertError } = await supabase.from("expenses").insert({
         org_id: orgId,
@@ -115,7 +167,7 @@ function DespesaModal({ onClose, orgId, onCreated, mode = "create", expenseId })
         category_id: form.categoryId,
         expense_type: form.expenseType,
         cost_type: form.costType || null,
-        amount: parseCurrency(form.amount),
+        amount,
         due_date: form.dueDate,
         paid: form.paid,
         paid_at: form.paid ? form.dueDate : null,
@@ -231,6 +283,18 @@ function DespesaModal({ onClose, orgId, onCreated, mode = "create", expenseId })
             required
           />
         </label>
+        {!isEdit && form.expenseType === "recurring" && (
+          <label className="field">
+            <span>Repetir por (meses) *</span>
+            <input
+              type="number"
+              min="1"
+              value={form.recurrenceCount}
+              onChange={handleChange("recurrenceCount")}
+              required
+            />
+          </label>
+        )}
         <div className="field span-2">
           <span>Despesa Paga</span>
           <div className="switch-row">
@@ -250,11 +314,7 @@ function DespesaModal({ onClose, orgId, onCreated, mode = "create", expenseId })
             onChange={handleChange("notes")}
           />
         </label>
-        {error && (
-          <div className="form-error span-2">
-            {error}
-          </div>
-        )}
+        {error && <div className="form-error span-2">{error}</div>}
       </form>
     </Modal>
   );

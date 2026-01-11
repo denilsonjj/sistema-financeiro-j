@@ -1,5 +1,6 @@
-﻿import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
+import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import LegendItem from "../LegendItem";
+import { formatCurrency } from "../../utils/format";
 
 function Donut({ segments }) {
   return (
@@ -20,6 +21,7 @@ function Donut({ segments }) {
               ))}
             </Pie>
             <Tooltip
+              formatter={(value) => formatCurrency(value)}
               contentStyle={{
                 backgroundColor: "var(--surface)",
                 border: "1px solid var(--border)",
