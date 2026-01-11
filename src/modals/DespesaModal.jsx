@@ -128,6 +128,40 @@ function DespesaModal({ onClose, orgId, onCreated, mode = "create", expenseId })
         setLoading(false);
         return;
       }
+
+      if (form.expenseType === "recurring") {
+        const recurrenceCount = Math.max(1, Number(form.recurrenceCount || 1));
+        if (!Number.isFinite(recurrenceCount) || recurrenceCount < 1) {
+          setError("Quantidade de meses inválida.");
+          setLoading(false);
+          return;
+        }
+
+        if (recurrenceCount > 1) {
+          const payload = Array.from({ length: recurrenceCount - 1 }, (_, index) => {
+            const dueDate = toIsoDate(addMonths(baseDate, index + 1));
+            return {
+              org_id: orgId,
+              description: form.description,
+              category_id: form.categoryId,
+              expense_type: form.expenseType,
+              cost_type: form.costType || null,
+              amount,
+              due_date: dueDate,
+              paid: false,
+              paid_at: null,
+              notes: form.notes || null,
+            };
+          });
+
+          const { error: insertError } = await supabase.from("expenses").insert(payload);
+          if (insertError) {
+            setError("Despesa atualizada, mas não foi possível criar as próximas.");
+            setLoading(false);
+            return;
+          }
+        }
+      }
     } else if (form.expenseType === "recurring") {
       const recurrenceCount = Math.max(1, Number(form.recurrenceCount || 1));
       if (!Number.isFinite(recurrenceCount) || recurrenceCount < 1) {
@@ -283,7 +317,7 @@ function DespesaModal({ onClose, orgId, onCreated, mode = "create", expenseId })
             required
           />
         </label>
-        {!isEdit && form.expenseType === "recurring" && (
+        {form.expenseType === "recurring" && (
           <label className="field">
             <span>Repetir por (meses) *</span>
             <input
